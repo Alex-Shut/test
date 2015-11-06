@@ -1,0 +1,4 @@
+name = taryfy
+description = считаем тарифы на коммуналку
+package = DEV
+core = 7.x

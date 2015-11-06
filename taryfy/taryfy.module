@@ -1,0 +1,186 @@
+<?php
+///////////// add admin-page ///////////////
+/**
+ * Implements hook_permission().
+ *
+ */
+function taryfy_permission() {
+  return array(
+    'Taryfy admin page' => array(
+      'title' => t('castom page'),
+      'description' => t('Allow users to my castom page'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ *
+ */
+function taryfy_menu() {
+  $items['admin/config/taryfy'] = array(
+    'title' => 'Tariff plan',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('taryfy_page_form'),
+    // 'access callback' => TRUE,
+    'access arguments' => array('Taryfy admin page'),
+    'expanded' => TRUE,
+    'menu_name' => 'management',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_page_form().
+ *
+ */
+function taryfy_page_form($form, &$form_state) {
+  $form['light'] = array(
+    '#type' => 'textfield',
+    '#title' => t('light'),
+    '#description' => t('install light tariff'),
+    '#default_value' => variable_get('light', '0'),
+    '#size' => 10,
+    '#maxlength' => 10,
+    '#weight' => 0,
+  );
+
+  $form['gas'] = array(
+    '#type' => 'textfield',
+    '#title' => t('gas'),
+    '#description' => t('install gas tariff'),
+    '#default_value' => variable_get('gas', '0'),
+    '#size' => 10,
+    '#maxlength' => 10,
+    '#weight' => 0,
+  );
+
+  $form['water'] = array(
+    '#type' => 'textfield',
+    '#title' => t('water'),
+    '#description' => t('install water tariff'),
+    '#default_value' => variable_get('water', '0'),
+    '#size' => 10,
+    '#maxlength' => 10,
+    '#weight' => 0,
+  );
+
+  return system_settings_form($form);
+}
+
+///////////////// node add new rate tariffs /////////////
+/**
+ * Implements hook_form_alter().
+ *
+ */
+function taryfy_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_state['build_info']['form_id'] == 'taryf_node_form') {
+// hidden fields
+    $form['title']['#access'] = FALSE;
+    $form['field_date_u']['#access'] = FALSE;
+    $form['field_total']['#access'] = FALSE;
+
+// the fields with values
+    $form['title']['#default_value'] = 'filled in automatically';
+    $form['field_light_price']['und'][0]['value']['#default_value'] = variable_get('light', '0');
+    $form['field_gas_price']['und'][0]['value']['#default_value'] = variable_get('gas', '0');
+    $form['field_water_price']['und'][0]['value']['#default_value'] = variable_get('water', '0');
+
+// custom fields
+    $form['month'] = array(
+      '#type' => 'select',
+      '#title' => t('Select month'),
+      '#options' => array(
+        1 => t('January'),
+        2 => t('February'),
+        3 => t('March'),
+        4 => t('April'),
+        5 => t('May'),
+        6 => t('June'),
+        7 => t('July'),
+        8 => t('August'),
+        9 => t('September'),
+        10 => t('October'),
+        11 => t('November'),
+        12 => t('December'),
+      ),
+      '#weight' => -5,
+      '#required' => TRUE,
+    );
+  }
+}
+
+/**
+ * Implements hook_node_presave().
+ *
+ */
+function taryfy_node_presave($node) {
+// install custom title
+  $month_str = array(
+        1 => t('January'),
+        2 => t('February'),
+        3 => t('March'),
+        4 => t('April'),
+        5 => t('May'),
+        6 => t('June'),
+        7 => t('July'),
+        8 => t('August'),
+        9 => t('September'),
+        10 => t('October'),
+        11 => t('November'),
+        12 => t('December'),
+      );
+  $node->title = $month_str[$node->month] . '-2015';
+
+// get the latest performance counters
+// exampl string to result: $result_counter['field_data_field_water_new'][0]->field_water_new_value;
+  $var_db_table_array = array (
+    'field_data_field_light_new' => 'field_light_new_value',
+    'field_data_field_gas_new' => 'field_gas_new_value',
+    'field_data_field_water_new' => 'field_water_new_value',
+  );
+
+  foreach ($var_db_table_array as $key => $value) {
+    $result_counter[$key] = db_select($key, 'n')
+      ->fields('n', array($value))
+      ->orderBy('n.entity_id', 'DESC')
+      ->range(0,1)
+      ->execute()
+      ->fetchAll();
+  }
+
+// calculation of payments for a month
+//
+// a list of variables
+    // light
+  $light_result_counter_old = isset($result_counter['field_data_field_light_new'][0]->field_light_new_value) ? $result_counter['field_data_field_light_new'][0]->field_light_new_value : 0;
+  $light_result_counter_new = $node->field_light_new['und'][0]['value'];
+  $light_price = $node->field_light_price['und'][0]['value'];
+
+  // gas
+  $gas_result_counter_old = isset($result_counter['field_data_field_gas_new'][0]->field_gas_new_value) ? $result_counter['field_data_field_gas_new'][0]->field_gas_new_value : 0;
+  $gas_result_counter_new = $node->field_gas_new['und'][0]['value'];
+  $gas_price = $node->field_gas_price['und'][0]['value'];
+
+  // water
+  $water_result_counter_old = isset($result_counter['field_data_field_water_new'][0]->field_water_new_value) ? $result_counter['field_data_field_water_new'][0]->field_water_new_value : 0;
+  $water_result_counter_new = $node->field_water_new['und'][0]['value'];
+  $water_price = $node->field_water_price['und'][0]['value'];
+
+  // communal
+  $communal = $node->field_communal['und'][0]['value'];
+
+// math
+  $light_value = $light_price * ($light_result_counter_new - $light_result_counter_old);
+
+  $gas_value = $gas_price * ($gas_result_counter_new - $gas_result_counter_old);
+
+  $water_value = $water_price * ($water_result_counter_new - $water_result_counter_old);
+
+
+  $node->field_total['und'][0]['value'] = $light_value + $gas_value + $water_value + $communal;
+
+// install unix-time date of payment
+  $node->field_date_u['und'][0]['value'] = mktime(0, 0, 0, $node->month, 1, 2015);
+}
